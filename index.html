@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Интеллектуальная система управления БПЛА</title>
+<style>
+:root{--bg:#eef2ee;--ink:#14231b;--mut:#51635a;--card:#fff;--ln:#c9d6cd;--ac:#1f6b45;--acx:#fff;--wh:#c48f0c;--red:#b5452f;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a14;--ink:#e6efe9;--mut:#9db1a5;--card:#16261d;--ln:#2b4034;--ac:#5fc08b;--acx:#0f1a14;--wh:#e8b93a;--red:#e07a62;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1a14;--ink:#e6efe9;--mut:#9db1a5;--card:#16261d;--ln:#2b4034;--ac:#5fc08b;--acx:#0f1a14;--wh:#e8b93a;--red:#e07a62;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+header{border-bottom:1px solid var(--ln);padding:14px 20px}
+header b{font-size:15px;display:block;margin-bottom:8px}
+nav{display:flex;gap:6px;flex-wrap:wrap}
+nav a{padding:3px 10px;border:1px solid var(--ln);border-radius:14px;color:var(--ink);text-decoration:none;font-size:14px}
+nav a.on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+main{max-width:900px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:clamp(26px,5vw,40px);line-height:1.15;margin:0 0 12px;font-weight:700}
+h2{font-size:20px;margin:28px 0 8px}
+.lead{color:var(--mut);max-width:62ch}
+.flow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:22px 0}
+.flow a{height:8px;background:var(--ln);border-radius:4px}.flow a.done{background:var(--ac)}
+.box{background:var(--card);border:1px solid var(--ln);border-radius:6px;padding:14px 18px;margin:12px 0}
+ul{padding-left:20px;margin:6px 0}
+.btns{display:flex;justify-content:space-between;gap:10px;margin-top:30px;flex-wrap:wrap}
+.btn{display:inline-block;padding:10px 20px;background:var(--ac);color:var(--acx);border:0;border-radius:6px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
+.btn.o{background:none;color:var(--ink);border:1px solid var(--ln)}
+.btn:focus-visible,nav a:focus-visible,input:focus-visible{outline:3px solid var(--wh);outline-offset:2px}
+.list{display:grid;gap:8px;margin-top:20px}
+.list a{display:grid;grid-template-columns:36px 1fr;gap:10px;padding:12px 16px;background:var(--card);border:1px solid var(--ln);border-radius:6px;color:var(--ink);text-decoration:none}
+.list a:hover{border-color:var(--ac)}.list small{color:var(--mut);display:block}
+.n{font-weight:700;color:var(--ac);font-size:22px}
+canvas{max-width:100%;height:auto;border:1px solid var(--ln);border-radius:6px;background:var(--card)}
+.row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.ctl{flex:1;min-width:240px}.ctl label{display:block;margin:10px 0}.ctl input{width:100%}
+pre{background:var(--card);border:1px solid var(--ln);border-radius:6px;padding:14px;overflow-x:auto;font-size:13px;line-height:1.5}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid var(--ln);padding:6px 9px;text-align:left;vertical-align:top}
+.bad{color:var(--red);font-weight:700}.ok{color:var(--ac);font-weight:700}
+</style></head><body>
+<header><b>Проектирование интеллектуальных систем управления БПЛА</b><nav id="nav" aria-label="Страницы"></nav></header>
+<main id="app"></main>
+<script>
+const S=[
+{t:'Подготовка данных и ПО',d:'Сбор данных с камеры и датчиков, их очистка и приведение к единому виду.',
+in:['Поток с камеры БПЛА: кадры RGB и мультиспектральные (NIR, Red), 5–30 кадров/с.','Карта, положение, цель: растровая карта района, стартовая точка, координаты цели.','Данные GPS: широта, долгота, высота, скорость; шум 2–5 м, возможны выбросы.','Датасет: открытый набор аэрофотоснимков (например, VisDrone) для обучения детектора и снимки полей для NDVI. Делится на train / val / test в пропорции 70/15/15.'],
+tasks:['Обработка изображений (OpenCV): масштабирование, фильтр шума.','Коррекция данных GPS: удаление выбросов, сглаживание.','Нормализация данных в диапазон 0–1.','Коррекция ошибок и пропусков.'],ai:'Фильтрация и нормализация — подготовка входа для ML/DL-моделей.'},
+{t:'Генерация траектории',d:'Расчёт наиболее эффективного маршрута БПЛА для выбранного района: круговая, восьмёрка или произвольная траектория.',
+in:['Карта района с препятствиями и стартовая/целевая точки. Район выбирается в параметрах проекта.'],
+tasks:['Применение алгоритмов ИИ (A*, RRT, генетический алгоритм).','Учёт препятствий.','Определение оптимального пути по длине и безопасности.'],ai:'Деревья решений и поиск на графе; траектории показаны на странице «Результаты».'},
+{t:'Управление полётом',d:'Управление движением дрона в реальном времени.',in:['Положение и скорость от GPS/IMU, заданная траектория.'],
+tasks:['Алгоритмы PID или PPO (обучение с подкреплением).','Коррекция скорости и направления.','Маневрирование вокруг препятствий.'],ai:'PID даёт базовую устойчивость, PPO обучается на симуляции полёта.'},
+{t:'Обнаружение объектов',d:'Распознавание объектов и препятствий по кадрам камеры БПЛА с привязкой к ГИС.',in:['Кадры камеры, GPS-метка каждого кадра.'],
+tasks:['Нейронная сеть YOLOv8.','Определение координат объекта (пиксели → GPS).','Обнаружение препятствий.'],ai:'Глубокое обучение (CNN). Метрики: precision, recall, mAP.'},
+{t:'Создание карты',d:'Картирование окружающей среды по данным камеры и датчиков.',in:['Последовательность кадров и положения дрона.'],
+tasks:['Алгоритм SLAM.','Построение 2D/3D карты.','Вставка объектов и траектории дрона на карту.'],ai:'SLAM + нечёткая логика для оценки неопределённости карты.'},
+{t:'Изменение координат',d:'Преобразование GPS-координат в локальную систему.',in:['WGS-84: широта, долгота, высота.'],
+tasks:['Геодезические расчёты (WGS-84 → ECEF → ENU).','Преобразование координат в метры от точки старта.','Повышение точности: расширенный фильтр Калмана (EKF).'],ai:'Гибрид CNN–LSTM + EKF повышает устойчивость и точность.'},
+{t:'Принятие решений',d:'Система анализирует данные нейросетью CNN–LSTM–EKF, принимает решение и адаптивно управляет БПЛА (блок-схема, рисунки 2 и 3).',in:['Результаты этапов 1–6, индекс NDVI.'],
+tasks:['Расчёт NDVI и признаков фитостресса.','Решение: NDVI ниже порога → снимок и сообщение.','Обратная связь и адаптивное управление.'],ai:'Нечёткая логика (Мамдани), регрессия, CNN–LSTM–EKF.',end:1}];
+const P=[['home','Главная'],...S.map((s,i)=>['s'+(i+1),String(i+1)]),['ndvi','NDVI'],['code','Код и тест'],['results','Результаты']];
+const app=document.getElementById('app'),nav=document.getElementById('nav');
+nav.innerHTML=P.map(p=>`<a href="#${p[0]}" data-p="${p[0]}">${p[1]}</a>`).join('');
+let raf=0;
+function seed(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function route(){cancelAnimationFrame(raf);const h=location.hash.slice(1)||'home';
+nav.querySelectorAll('a').forEach(a=>a.classList.toggle('on',a.dataset.p===h));
+const m=/^s([1-7])$/.exec(h);
+if(m)stage(+m[1]);else if(h==='ndvi')ndvi();else if(h==='code')code();else if(h==='results')results();else home();
+window.scrollTo(0,0)}
+addEventListener('hashchange',route);
+function home(){app.innerHTML=`<h1>Интеллектуальная система управления БПЛА</h1>
+<p class="lead">Система из семи этапов: от сбора данных до принятия решения по индексу NDVI. Нажимайте кнопку на каждой странице, чтобы перейти к следующему этапу.</p>
+<div class="list">${S.map((s,i)=>`<a href="#s${i+1}"><span class="n">${i+1}</span><span><b>${s.t}</b><small>${s.d}</small></span></a>`).join('')}</div>
+<div class="btns"><a class="btn o" href="#ndvi">Анализ NDVI</a><a class="btn" href="#s1">Начать: этап 1</a></div>`}
+function stage(i){const s=S[i-1];
+app.innerHTML=`<h1>Этап ${i}. ${s.t}</h1><div class="flow">${S.map((_,k)=>`<a href="#s${k+1}" class="${k<i?'done':''}" aria-label="Этап ${k+1}"></a>`).join('')}</div>
+<p class="lead">${s.d}</p>
+<h2>Входные данные</h2><div class="box"><ul>${s.in.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+<h2>Выполняемые задачи</h2><div class="box"><ul>${s.tasks.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+<h2>Метод ИИ</h2><div class="box">${s.ai}</div>
+<div class="btns">${i>1?`<a class="btn o" href="#s${i-1}">Назад</a>`:'<a class="btn o" href="#home">Главная</a>'}
+${s.end?'<a class="btn" href="#ndvi">Далее: расчёт NDVI</a>':`<a class="btn" href="#s${i+1}">Далее: этап ${i+1}</a>`}</div>`}
+/* NDVI */
+const W=48,H=32,rn=seed(7),NZ=Array.from({length:W*H},()=>[rn()-.5,rn()-.5]);
+const tri=(x,a,b,c)=>Math.max(0,Math.min((x-a)/(b-a),(c-x)/(c-b)));
+function ndviCalc(area,thr){const cx=30,cy=14,rx=Math.sqrt(area*W*H/Math.PI)*1.2||.01,ry=rx/1.2,v=[];
+for(let y=0;y<H;y++)for(let x=0;x<W;x++){const d=((x-cx)/rx)**2+((y-cy)/ry)**2,s=d<1?1:0,z=NZ[y*W+x];
+const nir=.45-.12*s+z[0]*.06,red=.15+.07*s+z[1]*.03;v.push((nir-red)/(nir+red))}
+const mean=v.reduce((a,b)=>a+b)/v.length,share=v.filter(q=>q<thr).length/v.length;return{v,mean,share}}
+function ndvi(){app.innerHTML=`<h1>Расчёт NDVI и принятие решения</h1>
+<p class="lead">Мультиспектральная камера даёт каналы NIR и Red. Формула: NDVI = (NIR − Red) / (NIR + Red). Если доля пикселей ниже порога превышает 8%, система подозревает фитостресс и командует снять кадр.</p>
+<div class="row"><canvas id="cv" width="480" height="320" role="img" aria-label="Карта NDVI поля"></canvas>
+<div class="ctl"><label>Площадь стресса: <b id="av"></b>%<input id="ar" type="range" min="0" max="60" value="20"></label>
+<label>Порог NDVI: <b id="tv"></b><input id="tr" type="range" min="20" max="60" value="40"></label><div class="box" id="out"></div></div></div>
+<p class="lead">Данные учебные: поле смоделировано, участок стресса задан вручную. Для реального проекта подставьте мультиспектральные снимки.</p>
+<div class="btns"><a class="btn o" href="#s7">Назад: этап 7</a><a class="btn" href="#code">Далее: код и тест</a></div>`;
+const cv=document.getElementById('cv'),c=cv.getContext('2d'),ar=document.getElementById('ar'),tr=document.getElementById('tr');
+function up(){const a=ar.value/100,t=tr.value/100,r=ndviCalc(a,t);
+document.getElementById('av').textContent=ar.value;document.getElementById('tv').textContent=t.toFixed(2);
+r.v.forEach((q,k)=>{const u=Math.max(0,Math.min(1,(q-.1)/.5));c.fillStyle=`hsl(${u*110},65%,45%)`;c.fillRect((k%W)*10,Math.floor(k/W)*10,10,10)});
+const m=r.mean,lo=tri(m,-.1,.1,.35),mid=tri(m,.25,.4,.55),hi=tri(m,.45,.65,.9),st=r.share>.08;
+document.getElementById('out').innerHTML=`Средний NDVI: <b>${m.toFixed(3)}</b><br>Пикселей ниже порога: <b>${(r.share*100).toFixed(1)}%</b><br>Нечёткая принадлежность (Мамдани): низкий ${lo.toFixed(2)}, средний ${mid.toFixed(2)}, высокий ${hi.toFixed(2)}<br><br>Решение: <span class="${st?'bad':'ok'}">${st?'есть признаки стресса — сделать снимок':'признаков стресса нет — продолжать полёт'}</span>`}
+ar.oninput=tr.oninput=up;up()}
+/* Code */
+const PY=`for frame in camera_stream():          # запуск потока
+    if frame is None: continue            # кадр не получен
+    objs = detect(frame)                  # YOLOv8
+    anomaly = texture_anomaly(frame)      # проверка текстуры
+    gps = get_gps_coords()
+    x, y = gps_to_local(gps)              # этап 6
+    if objs or anomaly:
+        ndvi = calc_ndvi(frame)
+        if ndvi.mean() &lt; THRESHOLD:
+            take_photo(); send_message(gps)
+        control_object(objs)              # адаптивное управление
+    uav.update(pid(target, (x, y)))       # обратная связь`;
+function code(){app.innerHTML=`<h1>Код, результат и тест</h1>
+<p class="lead">Алгоритм по блок-схеме (рисунок 2). Полная программа на Python — файл drone_system.py из проекта.</p>
+<pre>${PY}</pre><button class="btn" id="run">Запустить тест</button><pre id="log" aria-live="polite">Нажмите «Запустить тест».</pre>
+<div class="btns"><a class="btn o" href="#ndvi">Назад: NDVI</a><a class="btn" href="#results">Далее: результаты</a></div>`;
+document.getElementById('run').onclick=()=>{const r=seed(Date.now()%1000),L=[];let la=51.1694,lo=71.4491;
+for(let f=1;f<=10;f++){if(r()<.2){L.push(`кадр ${f}: не получен → continue`);continue}
+la+=(r()-.3)*1e-4;lo+=(r()-.3)*1e-4;const o=r()<.4,a=r()<.3,nd=.25+r()*.4;
+let s=`кадр ${f}: объектов ${o?1:0}, аномалия ${a?'да':'нет'}, GPS ${la.toFixed(5)}, ${lo.toFixed(5)}`;
+if(o||a)s+=nd<.4?` → NDVI ${nd.toFixed(2)} < порога: снимок + сообщение`:` → NDVI ${nd.toFixed(2)}: норма`;
+L.push(s)}document.getElementById('log').textContent=L.join('\n')}}
+/* Results */
+function results(){app.innerHTML=`<h1>Результаты</h1>
+<h2>Прогнозирование</h2><p class="lead">Недельный средний NDVI поля (учебный ряд). Линейная регрессия обучена на 9 неделях, прогноз на 3 следующие.</p>
+<canvas id="ch" width="640" height="240" role="img" aria-label="График NDVI и прогноза"></canvas>
+<h2>Результаты обучения</h2><div class="box" id="mt"></div>
+<h2>Завершённая карта и движение дрона</h2>
+<div class="row"><canvas id="mp" width="600" height="360" role="img" aria-label="Карта с траекторией дрона"></canvas>
+<div class="ctl"><label><input type="radio" name="tj" value="0" checked> Круговая</label><label><input type="radio" name="tj" value="1"> Восьмёрка</label><label><input type="radio" name="tj" value="2"> Произвольная (с обходом препятствий)</label></div></div>
+<h2>Методы ИИ в проекте</h2><div class="scroll"><table><tr><th>Класс</th><th>Алгоритм</th><th>Задача</th></tr>
+<tr><td>Машинное обучение</td><td>Линейная регрессия, SVM</td><td>Прогноз NDVI</td></tr>
+<tr><td>Глубокое обучение</td><td>CNN–LSTM, YOLOv8</td><td>Временные ряды, детекция</td></tr>
+<tr><td>Деревья решений</td><td>Decision Tree, Random Forest, XGBoost</td><td>Классификация данных ДЗЗ и ГИС</td></tr>
+<tr><td>Нечёткая логика</td><td>Система Мамдани</td><td>Оценка неопределённости NDVI</td></tr>
+<tr><td>Гибрид</td><td>CNN–LSTM + EKF</td><td>Точность и устойчивость</td></tr></table></div>
+<div class="btns"><a class="btn o" href="#code">Назад: код</a><a class="btn" href="#home">На главную</a></div>`;
+const rr=seed(3),y=Array.from({length:12},(_,i)=>.62-.012*i+(rr()-.5)*.03),n=9,xs=[...Array(n).keys()];
+const mx=(n-1)/2,my=y.slice(0,n).reduce((a,b)=>a+b)/n;let sx=0,sxx=0;xs.forEach(x=>{sx+=(x-mx)*(y[x]-my);sxx+=(x-mx)**2});
+const k=sx/sxx,b=my-k*mx,pr=i=>b+k*i;
+const sse=xs.reduce((a,x)=>a+(y[x]-pr(x))**2,0),sst=xs.reduce((a,x)=>a+(y[x]-my)**2,0),rm=Math.sqrt([9,10,11].reduce((a,i)=>a+(y[i]-pr(i))**2,0)/3);
+document.getElementById('mt').innerHTML=`Наклон: ${k.toFixed(4)} NDVI/нед.; R² (обучение) = ${(1-sse/sst).toFixed(3)}; RMSE прогноза = ${rm.toFixed(4)}.<br>Вывод: NDVI снижается примерно на ${Math.abs(k).toFixed(3)} в неделю — участок нужно обследовать.`;
+const c=document.getElementById('ch').getContext('2d'),css=getComputedStyle(document.documentElement),ink=css.getPropertyValue('--ink'),ac=css.getPropertyValue('--ac'),wh=css.getPropertyValue('--wh');
+const X=i=>40+i*(560/11),Y=v=>220-(v-.4)/.3*200;c.strokeStyle=ink;c.fillStyle=ink;c.font='12px sans-serif';
+[.4,.5,.6,.7].forEach(v=>{c.globalAlpha=.2;c.beginPath();c.moveTo(40,Y(v));c.lineTo(600,Y(v));c.stroke();c.globalAlpha=1;c.fillText(v.toFixed(1),8,Y(v)+4)});
+c.strokeStyle=ac;c.lineWidth=2;c.beginPath();y.forEach((v,i)=>i?c.lineTo(X(i),Y(v)):c.moveTo(X(i),Y(v)));c.stroke();
+c.strokeStyle=wh;c.setLineDash([6,4]);c.beginPath();for(let i=0;i<12;i++)i?c.lineTo(X(i),Y(pr(i))):c.moveTo(X(i),Y(pr(i)));c.stroke();c.setLineDash([]);
+c.fillStyle=ac;c.fillText('данные',50,14);c.fillStyle=wh;c.fillText('регрессия и прогноз (недели 10–12)',110,14);
+/* map */
+const mp=document.getElementById('mp'),g=mp.getContext('2d'),OB=[[110,70,28],[510,290,30],[500,70,24]];
+const FP=[[60,320],[180,250],[300,190],[420,140],[560,170]];
+function path(t){const N=400,o=[];for(let i=0;i<=N;i++){const u=i/N;
+if(t==0)o.push([300+120*Math.cos(u*6.2832),180+120*Math.sin(u*6.2832)]);
+else if(t==1)o.push([300+170*Math.sin(u*6.2832),180+90*Math.sin(2*u*6.2832)]);
+else{const f=u*(FP.length-1),j=Math.min(Math.floor(f),FP.length-2),q=f-j;o.push([FP[j][0]+(FP[j+1][0]-FP[j][0])*q,FP[j][1]+(FP[j+1][1]-FP[j][1])*q])}}return o}
+let pts=path(0),idx=0;
+document.querySelectorAll('input[name=tj]').forEach(e=>e.onchange=()=>{pts=path(+e.value);idx=0});
+function fr(){g.clearRect(0,0,600,360);g.strokeStyle=css.getPropertyValue('--ln');for(let x=0;x<=600;x+=40){g.beginPath();g.moveTo(x,0);g.lineTo(x,360);g.stroke()}for(let y2=0;y2<=360;y2+=40){g.beginPath();g.moveTo(0,y2);g.lineTo(600,y2);g.stroke()}
+g.fillStyle=css.getPropertyValue('--red');OB.forEach(o=>{g.beginPath();g.arc(o[0],o[1],o[2],0,6.2832);g.fill()});
+g.strokeStyle=ac;g.lineWidth=2;g.beginPath();pts.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.stroke();
+const p=pts[idx];g.fillStyle=wh;g.beginPath();g.arc(p[0],p[1],8,0,6.2832);g.fill();idx=(idx+1)%pts.length;raf=requestAnimationFrame(fr)}
+fr()}
+route();
+</script></body></html>
